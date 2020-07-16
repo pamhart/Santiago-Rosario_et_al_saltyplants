@@ -1,0 +1,259 @@
+#####################################################################
+## Code for Phylogenetic Signal Test for Angiosperm Sodium Project ##
+#####################################################################
+
+## Updated: 1 June 2020
+## Performed in RStudio v.1.2.1335
+
+################################
+## Load all possible packages ##
+################################
+
+library(ape)
+library(geiger)
+library(phyloint)
+library(phytools)
+library(phangorn)
+library(phylotools)
+library(phylobase)
+library(picante)
+
+#################
+## Import tree ##
+#################
+
+## FILE:  /Users/PamHart/Documents/Projects/Sodium_Angiosperms/Data/Smith_and_Brown_phylogenies/v0.1/ALLMB.tre
+
+> smithbrown_tree <- read.tree(file.choose())
+
+## Not going to plot it because it has >350,000 tips 
+
+#############################
+## Import classifier table ##
+#############################
+
+## Our original file and the Smith and Brown Phylogeny did not have agreement between the tip names
+## Thus, I altered our file, and names are now matched to those in the Smith and Brown Phylogeny. These may not be taxonomically up to date
+
+## FILE: /Users/PamHart/Documents/Projects/Sodium_Angiosperms/Data/INORDER_2020may30_smithbrown_labeled_phenomatch.csv
+
+saltyplants <- read.csv(file.choose(), header = T)
+
+#############################
+## Prune tree to match IDs ##
+#############################
+
+## Need to make sure the individuals match from the tree and the dataset
+## Create a matrix with the IDs from your dataset you want to match
+
+IDs <- as.matrix(saltyplants$Species)[,1]
+
+## Prune big tree to match the labels/IDs provided
+
+pruned_saltyplants_tree<-drop.tip(smithbrown_tree,smithbrown_tree$tip.label[-na.omit(match(IDs,smithbrown_tree$tip.label))])
+
+plot.phylo(pruned_saltyplants_tree)
+
+## label nodes
+
+nodelabels()
+
+## The angiosperm phylogeny has a polytomy at node 92 (Citrus)
+## Need to resolve this polytomy for the signal code to work
+
+resolveNode(pruned_saltyplants_tree,92)
+15 phylogenetic trees
+
+bifur_pruned_saltyplants_tree <- multi2di(pruned_saltyplants_tree)
+
+plot.phylo(bifur_pruned_saltyplants_tree)
+
+## Check to make sure the phylogeny is binary, i.e., bifurcating in a rooted tree
+
+is.binary.phylo(bifur_pruned_saltyplants_tree)
+[1] TRUE
+
+## Output tip labels of the phylogeny to make sure the next input file is in the correct order
+
+write.csv(bifur_pruned_saltyplants_tree$tip.label,file="tipnames.csv")
+
+## The original input file (INORDER_2020may30_smithbrown_labeled_phenomatch.csv) is in the opposite order
+## Created new file in the correct order as the tips
+
+## FILE: /Users/PamHart/Documents/Projects/Sodium_Angiosperms/Data/INORDER_2020may31_smithbrown_labeled_phenomatch.csv
+
+############################################################
+## Testing for phylogenetic signal with discrete variable ##
+############################################################
+
+## Function to test for phylogenetic signal in a discrete character
+## The following is the 'phylo.signal.disc' from https://github.com/juliema/publications/blob/master/BrueeliaMS/Maddison.Slatkin.R
+## This is a version of Enrico Rezende's original function from https://www.mail-archive.com/r-sig-phylo@r-project.org/msg00922.html
+
+> 'phylo.signal.disc' <-
+    function(trait,phy,rep = 999,cost=NULL)
+    {
+        lev <- attributes(factor(trait))$levels
+        if (length(lev) == length(trait))
+            stop("Are you sure this variable is categorical?")
+        if(is.null(cost)){
+            cost1 <- 1-diag(length(lev))
+        }
+        else {
+            if (length(lev) != dim(cost)[1])
+                stop("Dimensions of the character state transition matrix do not agree with the number of levels")
+            cost1<- t(cost)
+        }
+        dimnames(cost1) <- list(lev,lev)
+        trait <- as.numeric(trait)
+        attributes(trait)$names <- phy$tip
+        NULL.MODEL <- matrix(NA,rep,1)
+        obs <- t(data.frame(trait))
+        obs <- phyDat(t(obs),type="USER",levels=attributes(factor(obs))$levels)
+        OBS <- parsimony(phy,obs,method="sankoff",cost=cost1)
+        for (i in 1:rep){
+            null <- sample(as.numeric(trait))
+            attributes(null)$names <- attributes(trait)$names
+            null <- t(data.frame(null))
+            null <- phyDat(t(null),type="USER",levels=attributes(factor(null))$levels)
+            NULL.MODEL[i,]<-parsimony(phy,null,method="sankoff",cost=cost1)
+            P.value <- sum(OBS >= NULL.MODEL)/(rep + 1)
+        }
+        par(mfrow=c(1,2))
+        hist(NULL.MODEL,xlab="Transitions.in.Randomizations",xlim=c(min(c(min(NULL.MODEL,OBS-1))),max(NULL.MODEL)+1))
+        arrows(OBS,rep/10,OBS,0,angle=20,col="red",lwd=4)
+        phy$tip.label <- rep(".",length(trait))
+        plot(phy,tip.col=trait+10,cex=250/length(trait),font=1)
+        title("Character states")
+        par(mfrow=c(1,1))
+        
+        OUTPUT1 <- t(data.frame(Number.of.Levels = length(attributes(factor(trait))$levels), Evolutionary.Transitions.Observed=OBS,Evolutionary.Transitions.Randomization.Median=median(NULL.MODEL),Evolutionary.Transitions.Randomization.Min=min(NULL.MODEL),Evolutionary.Transitions.Randomization.Max=max(NULL.MODEL),P.value))
+        
+        if(is.null(cost)){
+            list(.Randomization.Results=OUTPUT1,.Levels= lev,.Costs.of.character.state.transition.UNORDERED.PARSIMONY = t(cost1))
+        }
+        else {
+            list(.Randomization.Results=OUTPUT1,.Levels= lev,.Costs.of.character.state.transition.FROM.ROW.TO.COL = t(cost1))        }
+    }
+
+
+
+
+
+### Import classifier file with rownames not defined
+### FILE: /Users/PamHart/Documents/Projects/Sodium_Angiosperms/Data/INORDER_2020may31_smithbrown_labeled_phenomatch.csv
+### may31saltyplants <- read.csv(file.choose(), header = T)
+
+
+## Import classifier file with rownames defined
+## FILE: /Users/PamHart/Documents/Projects/Sodium_Angiosperms/Data/INORDER_2020may31_smithbrown_labeled_phenomatch.csv
+
+may31saltyplants_rownames <- read.csv(file.choose(), row.names = "Species", header = TRUE)
+
+## Create a matrix. This is of the first column in our data, biomass
+
+may31x <- as.matrix(may31saltyplants_rownames,row.names=1)[,1]
+
+## Create a factor of the matrix for use in function
+
+fact_may31x <- factor(may31x)
+
+## Use function
+
+phylo.signal.disc(fact_may31x,bifur_pruned_saltyplants_tree,rep = 999)
+
+$.Randomization.Results
+                                                [,1]
+Number.of.Levels                               6.000
+Evolutionary.Transitions.Observed             29.000
+Evolutionary.Transitions.Randomization.Median 34.000
+Evolutionary.Transitions.Randomization.Min    27.000
+Evolutionary.Transitions.Randomization.Max    39.000
+P.value                                        0.013
+
+$.Levels
+[1] "Hump-shaped"                       "Linear_decrease"                  
+[3] "Linear_increase"                   "Non-linear_decline_concave_upward"
+[5] "Non-linear_decline_convex_upward"  "Zero_slope"                       
+
+$.Costs.of.character.state.transition.UNORDERED.PARSIMONY
+                                  Hump-shaped Linear_decrease Linear_increase
+Hump-shaped                                 0               1               1
+Linear_decrease                             1               0               1
+Linear_increase                             1               1               0
+Non-linear_decline_concave_upward           1               1               1
+Non-linear_decline_convex_upward            1               1               1
+Zero_slope                                  1               1               1
+                                  Non-linear_decline_concave_upward
+Hump-shaped                                                       1
+Linear_decrease                                                   1
+Linear_increase                                                   1
+Non-linear_decline_concave_upward                                 0
+Non-linear_decline_convex_upward                                  1
+Zero_slope                                                        1
+                                  Non-linear_decline_convex_upward Zero_slope
+Hump-shaped                                                      1          1
+Linear_decrease                                                  1          1
+Linear_increase                                                  1          1
+Non-linear_decline_concave_upward                                1          1
+Non-linear_decline_convex_upward                                 0          1
+Zero_slope                                                       1          0
+
+
+
+## Repeat with the other variable, sodium
+
+may31x2<-as.matrix(may31saltyplants_rownames,row.names=1)[,2]
+
+fact_may31x2 <- factor(may31x2)
+
+phylo.signal.disc(fact_may31x2,bifur_pruned_saltyplants_tree,rep = 999)
+
+$.Randomization.Results
+                                                [,1]
+Number.of.Levels                               6.000
+Evolutionary.Transitions.Observed             38.000
+Evolutionary.Transitions.Randomization.Median 40.000
+Evolutionary.Transitions.Randomization.Min    34.000
+Evolutionary.Transitions.Randomization.Max    45.000
+P.value                                        0.169
+
+$.Levels
+[1] "Asymptotic_increase"  "Exponential_increase" "Hump-shaped"         
+[4] "Linear_increase"      "Non_linear_increase"  "Sigmoidal_increase"  
+
+$.Costs.of.character.state.transition.UNORDERED.PARSIMONY
+                     Asymptotic_increase Exponential_increase Hump-shaped
+Asymptotic_increase                    0                    1           1
+Exponential_increase                   1                    0           1
+Hump-shaped                            1                    1           0
+Linear_increase                        1                    1           1
+Non_linear_increase                    1                    1           1
+Sigmoidal_increase                     1                    1           1
+                     Linear_increase Non_linear_increase Sigmoidal_increase
+Asymptotic_increase                1                   1                  1
+Exponential_increase               1                   1                  1
+Hump-shaped                        1                   1                  1
+Linear_increase                    0                   1                  1
+Non_linear_increase                1                   0                  1
+Sigmoidal_increase                 1                   1                  0
+
+#####################
+## Dot Phylogenies ##
+#####################
+
+cols_biomass <-setNames(c("#FCE51D","#80C453","#1EA984","#2D778E","#414487","#431853"),c("Hump-shaped","Linear_decrease","Linear_increase","Non-linear_decline_concave_upward","Non-linear_decline_convex_upward","Zero_slope"))
+
+dotTree(bifur_pruned_saltyplants_tree,may31x,colors=cols_biomass, legend = FALSE)
+
+
+cols_sodium <-setNames(c("#EBE72B","#FEBB2A","#FA8847","#D85C67","#BA3289","#853795"),c("Asymptotic_increase","Exponential_increase","Hump-shaped","Linear_increase","Non_linear_increase","Sigmoidal_increase"))
+
+dotTree(bifur_pruned_saltyplants_tree,may31x2,colors=cols_sodium, legend = FALSE)
+
+########################
+## Circular Phylogeny ##
+########################
+
+plotTree(bifur_pruned_saltyplants_tree,type="fan",fsize=0.5,lwd=1,ftype="i")
+    
